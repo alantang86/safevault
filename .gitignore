@@ -1,0 +1,8 @@
+# 忽略本地数据库与敏感配置
+passwords_vault.db
+*.db
+.env
+data/
+__pycache__/
+*.pyc
+.trae-html-share-packages/

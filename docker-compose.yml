@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # 1. 密码管理器核心服务
+  safevault:
+    image: python:3.12-alpine
+    container_name: safevault
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      - TZ=Asia/Shanghai
+      - VAULT_PORT=19527
+      - VAULT_DATA_DIR=/app/data
+    volumes:
+      - ./server.py:/app/server.py:ro
+      - ./web:/app/web:ro
+      - ./data:/app/data
+    command: ["python", "server.py"]
+    ports:
+      - "19527:19527"
+
+  # 2. Cloudflare Tunnel 客户端 (可选：打通外网访问)
+  # 如果已有全局 cloudflared 容器，可不用启动本部分
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared_safevault
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      - safevault

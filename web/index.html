@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SafeVault - 轻量安全密码库</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- 解锁 / 初始化 遮罩层 -->
+  <div id="lock-screen" class="lock-screen">
+    <div class="lock-box">
+      <div class="lock-icon-wrap" id="lock-icon">🔒</div>
+      <h2 id="lock-title" style="margin-bottom: 8px;">SafeVault 安全密码库</h2>
+      <p id="lock-desc" style="color: #94a3b8; font-size: 13.5px; margin-bottom: 24px;">
+        数据采用 PBKDF2 + AES-GCM-256 端到端加密，保存在本地 SQLite 数据库中。
+      </p>
+
+      <form id="master-auth-form" onsubmit="handleMasterAuth(event)">
+        <div class="form-group" style="text-align: left; margin-bottom: 16px;">
+          <label class="form-label" style="color: #cbd5e1;">主密码 (Master Password)</label>
+          <input type="password" id="master-pwd-input" class="form-input" style="background: #0f172a; border-color: #334155; color: white;" placeholder="请输入主密码以解密" required autofocus>
+        </div>
+
+        <div id="confirm-pwd-group" class="form-group" style="text-align: left; margin-bottom: 20px; display: none;">
+          <label class="form-label" style="color: #cbd5e1;">确认主密码</label>
+          <input type="password" id="confirm-pwd-input" class="form-input" style="background: #0f172a; border-color: #334155; color: white;" placeholder="请再次输入主密码">
+        </div>
+
+        <button type="submit" id="auth-submit-btn" class="btn btn-primary" style="width: 100%; padding: 10px;">
+          🔓 解锁保险库
+        </button>
+      </form>
+
+      <div style="margin-top: 18px; font-size: 12px; color: #64748b;">
+        * 本地免安装运行 · 零知识架构 · 密码无法在无主密码下恢复
+      </div>
+    </div>
+  </div>
+
+  <!-- 主应用界面 -->
+  <div id="app-container">
+    <!-- 侧边导航栏 -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🛡️</div>
+        <div>
+          <div class="brand-name">SafeVault</div>
+          <div style="font-size: 11px; color: var(--text-muted);">免安装安全密码器</div>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-title">分类视图</div>
+        <div class="nav-item active" data-filter-type="all" onclick="selectNav('all')">
+          <span>📦 全部密码</span>
+          <span class="nav-badge" id="badge-all">0</span>
+        </div>
+        <div class="nav-item" data-filter-type="favorite" onclick="selectNav('favorite')">
+          <span>⭐ 星标收藏</span>
+          <span class="nav-badge" id="badge-fav">0</span>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-title">账号类型</div>
+        <div class="nav-item" data-type="website" onclick="filterByType('website')">
+          <span>🌐 网站 / Web</span>
+          <span class="nav-badge" id="badge-website">0</span>
+        </div>
+        <div class="nav-item" data-type="app" onclick="filterByType('app')">
+          <span>📱 软件 / APP</span>
+          <span class="nav-badge" id="badge-app">0</span>
+        </div>
+        <div class="nav-item" data-type="server" onclick="filterByType('server')">
+          <span>💻 服务器 / SSH / DB</span>
+          <span class="nav-badge" id="badge-server">0</span>
+        </div>
+        <div class="nav-item" data-type="card" onclick="filterByType('card')">
+          <span>💳 银行卡 / 支付</span>
+          <span class="nav-badge" id="badge-card">0</span>
+        </div>
+        <div class="nav-item" data-type="wifi" onclick="filterByType('wifi')">
+          <span>📶 Wi-Fi 密码</span>
+          <span class="nav-badge" id="badge-wifi">0</span>
+        </div>
+        <div class="nav-item" data-type="secret" onclick="filterByType('secret')">
+          <span>📝 秘密备忘 / Key</span>
+          <span class="nav-badge" id="badge-secret">0</span>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-secondary btn-sm" onclick="openGeneratorModal()">
+          🔑 强密码生成器
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="exportVaultData()">
+          💾 导出备份 (JSON)
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="triggerImport()">
+          📥 导入备份
+        </button>
+        <input type="file" id="import-file-input" style="display: none;" accept=".json" onchange="handleImportFile(event)">
+        <button class="btn btn-secondary btn-sm" onclick="lockVault()">
+          🔒 立即锁定
+        </button>
+      </div>
+    </aside>
+
+    <!-- 主视窗 -->
+    <main class="main-content">
+      <!-- 顶栏 -->
+      <header class="topbar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="全局搜索名称、账号、网址..." oninput="handleSearch(this.value)">
+        </div>
+
+        <div class="topbar-actions">
+          <button class="btn btn-primary" onclick="openEntryModal()">
+            ➕ 新建密码条目
+          </button>
+        </div>
+      </header>
+
+      <!-- 内容主体 -->
+      <div class="content-body">
+        <div class="section-header">
+          <h2 class="section-title" id="current-view-title">
+            <span>📦 全部条目</span>
+          </h2>
+          <div style="font-size: 13px; color: var(--text-muted);" id="current-count-info">
+            共 0 个条目
+          </div>
+        </div>
+
+        <!-- 密码卡片网格 -->
+        <div class="cards-grid" id="cards-container">
+          <!-- 动态渲染 -->
+        </div>
+
+        <!-- 空数据提示 -->
+        <div id="empty-state" class="empty-state" style="display: none;">
+          <div class="empty-state-icon">📂</div>
+          <div style="font-size: 15px; font-weight: 500;">暂无密码条目</div>
+          <div style="font-size: 13px;">点击右上角的“新建密码条目”开始安全存储</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 新增 / 编辑 密码条目弹窗 -->
+  <div id="entry-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="entry-modal-title">新建条目</h3>
+        <button class="icon-btn" onclick="closeModal('entry-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="entry-id">
+        
+        <div class="form-group">
+          <label class="form-label">标题 / 服务名称 *</label>
+          <input type="text" id="entry-title" class="form-input" placeholder="例如：GitHub, 招商银行, 家用WiFi" required>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">条目类型</label>
+            <select id="entry-type" class="form-select">
+              <option value="website">🌐 网站 / 网页</option>
+              <option value="app">📱 软件 / APP</option>
+              <option value="server">💻 服务器 / SSH / 数据库</option>
+              <option value="card">💳 银行卡 / 支付卡</option>
+              <option value="wifi">📶 Wi-Fi 无线网络</option>
+              <option value="secret">📝 安全备忘 / API Key</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">分组 / 标签</label>
+            <input type="text" id="entry-category" class="form-input" placeholder="例如：工作、个人、理财">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">账号 / 用户名 / 手机 / 邮箱</label>
+          <input type="text" id="entry-username" class="form-input" placeholder="输入用户名或登录标识">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">密码 / 密钥 *</label>
+          <div class="input-with-action">
+            <input type="password" id="entry-password" class="form-input" placeholder="输入或生成密码" required>
+            <button class="btn btn-secondary" type="button" onclick="togglePasswordVisibility('entry-password')">👁️</button>
+            <button class="btn btn-secondary" type="button" onclick="quickGeneratePassword('entry-password')" title="快速生成16位随机密码">⚡生成</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">网址 / 连接地址</label>
+          <input type="text" id="entry-url" class="form-input" placeholder="https://...">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">安全备忘 / 自定义字段 (将一同端到端加密)</label>
+          <textarea id="entry-notes" class="form-textarea" rows="3" placeholder="其他秘密信息、二次验证恢复码、端口号、PIN码等..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('entry-modal')">取消</button>
+        <button class="btn btn-primary" onclick="saveEntry()">保存条目</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 查看详情与解密弹窗 -->
+  <div id="detail-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="detail-title">条目详情</h3>
+        <button class="icon-btn" onclick="closeModal('detail-modal')">✕</button>
+      </div>
+      <div class="modal-body" id="detail-body">
+        <!-- 详情渲染 -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="detail-delete-btn">删除</button>
+        <button class="btn btn-secondary" id="detail-edit-btn">编辑</button>
+        <button class="btn btn-primary" onclick="closeModal('detail-modal')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 密码生成器独立弹窗 -->
+  <div id="gen-modal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 class="modal-title">🔑 强密码生成器</h3>
+        <button class="icon-btn" onclick="closeModal('gen-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <div class="input-with-action">
+            <input type="text" id="gen-result" class="form-input" style="font-family: monospace; font-size: 15px; font-weight: bold;" readonly>
+            <button class="btn btn-primary" onclick="copyText(document.getElementById('gen-result').value, '密码已复制')">📋 复制</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between;">
+            <label class="form-label">密码长度: <span id="gen-length-val">16</span> 位</label>
+          </div>
+          <input type="range" id="gen-length" min="8" max="64" value="16" oninput="updateGenLength(this.value)">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+          <label><input type="checkbox" id="gen-upper" checked onchange="regeneratePassword()"> 大写字母 (A-Z)</label>
+          <label><input type="checkbox" id="gen-lower" checked onchange="regeneratePassword()"> 小写字母 (a-z)</label>
+          <label><input type="checkbox" id="gen-digits" checked onchange="regeneratePassword()"> 数字 (0-9)</label>
+          <label><input type="checkbox" id="gen-symbols" checked onchange="regeneratePassword()"> 特殊符号 (!@#$)</label>
+          <label><input type="checkbox" id="gen-exclude-similar" onchange="regeneratePassword()"> 排除易混淆字符 (l, 1, O, 0)</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="regeneratePassword()">🔄 重新生成</button>
+        <button class="btn btn-primary" onclick="closeModal('gen-modal')">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 消息容器 -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="crypto.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
